@@ -145,21 +145,27 @@ const Index = () => {
 
     // Thickness raw sheet
     const tAoa: (string | number | null)[][] = [];
-    for (let r = 0; r < 5; r++) tAoa.push(new Array(totalCols).fill(null));
+    for (let r = 0; r < 6; r++) tAoa.push(new Array(totalCols).fill(null));
     tAoa[0][0] = "파일명";
     tAoa[1][0] = "두께1";
     tAoa[2][0] = "두께2";
     tAoa[3][0] = "두께3";
     tAoa[4][0] = "평균";
+    tAoa[5][0] = "보정값";
     files.forEach((f, i) => {
       const c = cpCol(i);
       tAoa[0][c] = f.name;
+      const nums: number[] = [];
       [0, 1, 2].forEach((k) => {
         const v = parseFloat(f.thickness[k]);
+        if (!isNaN(v)) nums.push(v);
         tAoa[1 + k][c] = isNaN(v) ? f.thickness[k] || null : v;
       });
-      const avg = avgOf(f.thickness);
-      tAoa[4][c] = avg;
+      if (nums.length > 0) {
+        const rawAvg = nums.reduce((a, b) => a + b, 0) / nums.length;
+        tAoa[4][c] = rawAvg;
+        tAoa[5][c] = rawAvg - 0.3;
+      }
     });
     const tWs = XLSX.utils.aoa_to_sheet(tAoa);
 
