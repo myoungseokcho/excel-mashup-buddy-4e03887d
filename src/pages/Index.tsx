@@ -293,7 +293,7 @@ const Index = () => {
               <table className="text-xs">
                 <tbody>
                   {previewRows.slice(0, 50).map((row, ri) => (
-                    <tr key={ri} className={ri < 3 ? "bg-accent font-semibold" : "even:bg-muted/40"}>
+                    <tr key={ri} className={ri === 3 ? "bg-yellow-200 font-semibold" : ri < 3 ? "bg-accent font-semibold" : "even:bg-muted/40"}>
                       <td className="px-2 py-1 text-muted-foreground border-r font-mono w-12 text-center">
                         {excelRowLabel(ri)}
                       </td>
