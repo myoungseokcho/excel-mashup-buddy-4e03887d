@@ -98,16 +98,26 @@ const Index = () => {
     const aoa: (string | number | null)[][] = [];
     for (let r = 0; r < 105; r++) aoa.push(new Array(totalCols).fill(null));
 
+    // Column A labels
+    aoa[0][0] = "파일명";
+    aoa[1][0] = "두께";
+    aoa[2][0] = "1.07.E+5";
+    aoa[3][0] = "유전율";
+
     files.forEach((f, i) => {
       // Row 1: filename
       aoa[0][nameCol(i)] = f.name;
       // Row 2: average thickness (in cpCol)
       const avg = avgOf(f.thickness);
       aoa[1][cpCol(i)] = avg;
-      // Row 3: formula value = Cp(row80) * avg * 1e12 * 8.854 / 78.5
       const cp80 = f.cp[75]; // Excel row 80 = data index 75
+      // Row 3: cp80 raw value
+      if (typeof cp80 === "number") {
+        aoa[2][cpCol(i)] = cp80;
+      }
+      // Row 4: formula value = Cp(row80) * avg * 1e12 * 8.854 / 78.5
       if (avg !== null && typeof cp80 === "number") {
-        aoa[2][cpCol(i)] = (cp80 * avg * 1e12 * 8.854) / 78.5;
+        aoa[3][cpCol(i)] = (cp80 * avg * 1e12 * 8.854) / 78.5;
       }
       // Frequency only from first file (column A, rows 5-105)
       if (i === 0) {
@@ -132,9 +142,9 @@ const Index = () => {
 
     // Merged sheet
     const ws = XLSX.utils.aoa_to_sheet(mergedAoa);
-    // Apply yellow fill to entire row 3
+    // Apply yellow fill to entire row 4 (formula row)
     for (let c = 0; c < totalCols; c++) {
-      const addr = XLSX.utils.encode_cell({ c, r: 2 });
+      const addr = XLSX.utils.encode_cell({ c, r: 3 });
       if (!ws[addr]) ws[addr] = { t: "z", v: null };
       ws[addr].s = {
         ...(ws[addr].s || {}),
@@ -177,27 +187,9 @@ const Index = () => {
     toast.success(`${filename} 저장 완료`);
   };
 
-  // For preview, derive header row meta
-  const excelRowLabel = (previewIdx: number) => {
-    // previewIdx 0 → Excel row 1
-    // previewIdx 1 → Excel row 2
-    // previewIdx 2 → Excel row 3
-    // previewIdx 3 → Excel row 5 (skip row 4)
-    if (previewIdx <= 2) return previewIdx + 1;
-    return previewIdx + 2;
-  };
+  const excelRowLabel = (previewIdx: number) => previewIdx + 1;
 
-  // Build preview: rows 1,2,3 then data rows starting Excel row 5
-  const previewRows = useMemo(() => {
-    if (mergedAoa.length === 0) return [];
-    const rows: (string | number | null)[][] = [];
-    rows.push(mergedAoa[0]); // row 1 filenames
-    rows.push(mergedAoa[1]); // row 2 averages
-    rows.push(mergedAoa[2]); // row 3 formula
-    // skip row 4 (empty / removed X data Y data)
-    for (let r = 4; r < mergedAoa.length; r++) rows.push(mergedAoa[r]);
-    return rows;
-  }, [mergedAoa]);
+  const previewRows = useMemo(() => mergedAoa, [mergedAoa]);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-subtle)" }}>
@@ -301,7 +293,7 @@ const Index = () => {
               <table className="text-xs">
                 <tbody>
                   {previewRows.slice(0, 50).map((row, ri) => (
-                    <tr key={ri} className={ri < 3 ? "bg-accent font-semibold" : "even:bg-muted/40"}>
+                    <tr key={ri} className={ri === 3 ? "bg-yellow-200 font-semibold" : ri < 3 ? "bg-accent font-semibold" : "even:bg-muted/40"}>
                       <td className="px-2 py-1 text-muted-foreground border-r font-mono w-12 text-center">
                         {excelRowLabel(ri)}
                       </td>
