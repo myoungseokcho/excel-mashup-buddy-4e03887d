@@ -17,9 +17,9 @@ type FileData = {
 const RANGE_ROWS = 101; // A5:B105 → 101 rows
 
 // Column index for a file's Cp / filename / average / formula cell.
-// file 0 → col 1 (B); file i>=1 → col i+1
-const cpCol = (i: number) => (i === 0 ? 1 : i + 1);
-const nameCol = (i: number) => (i === 0 ? 1 : i + 1);
+// file 0 → col 1 (B); file i>=1 → col i+2 (skip col C, start from D)
+const cpCol = (i: number) => (i === 0 ? 1 : i + 2);
+const nameCol = (i: number) => (i === 0 ? 1 : i + 2);
 
 const avgOf = (t: [string, string, string]) => {
   const nums = t.map((v) => parseFloat(v)).filter((n) => !isNaN(n));
@@ -97,6 +97,11 @@ const Index = () => {
     if (files.length === 0) return [] as (string | number | null)[][];
     const aoa: (string | number | null)[][] = [];
     for (let r = 0; r < 105; r++) aoa.push(new Array(totalCols).fill(null));
+    // Column A labels
+    aoa[0][0] = "파일명";
+    aoa[1][0] = "두께";
+    aoa[2][0] = "1.07.E+5";
+    aoa[3][0] = "유전율";
 
     files.forEach((f, i) => {
       // Row 1: filename
