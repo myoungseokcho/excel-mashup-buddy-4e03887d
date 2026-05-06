@@ -9,11 +9,23 @@ import { Upload, FileSpreadsheet, Download, X, Sparkles } from "lucide-react";
 
 type FileData = {
   name: string;
-  xData: (string | number | null)[];
-  yData: (string | number | null)[];
+  freq: (string | number | null)[];
+  cp: (string | number | null)[];
+  thickness: [string, string, string];
 };
 
 const RANGE_ROWS = 101; // A5:B105 → 101 rows
+
+// Column index for a file's Cp / filename / average / formula cell.
+// file 0 → col 1 (B); file i>=1 → col i+1
+const cpCol = (i: number) => (i === 0 ? 1 : i + 1);
+const nameCol = (i: number) => (i === 0 ? 0 : i + 1);
+
+const avgOf = (t: [string, string, string]) => {
+  const nums = t.map((v) => parseFloat(v)).filter((n) => !isNaN(n));
+  if (nums.length === 0) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+};
 
 const Index = () => {
   const [files, setFiles] = useState<FileData[]>([]);
@@ -33,15 +45,15 @@ const Index = () => {
         const buf = await file.arrayBuffer();
         const wb = XLSX.read(buf, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const xData: (string | number | null)[] = [];
-        const yData: (string | number | null)[] = [];
+        const freq: (string | number | null)[] = [];
+        const cp: (string | number | null)[] = [];
         for (let r = 5; r <= 105; r++) {
           const aCell = ws[XLSX.utils.encode_cell({ c: 0, r: r - 1 })];
           const bCell = ws[XLSX.utils.encode_cell({ c: 1, r: r - 1 })];
-          xData.push(aCell ? (aCell.v as string | number) : null);
-          yData.push(bCell ? (bCell.v as string | number) : null);
+          freq.push(aCell ? (aCell.v as string | number) : null);
+          cp.push(bCell ? (bCell.v as string | number) : null);
         }
-        next.push({ name: file.name, xData, yData });
+        next.push({ name: file.name, freq, cp, thickness: ["", "", ""] });
       } catch (err) {
         toast.error(`${file.name} 처리 실패`);
       }
@@ -59,61 +71,117 @@ const Index = () => {
 
   const clearAll = () => setFiles([]);
 
-  const previewRows = useMemo(() => {
-    // Build preview matrix: row 1 = filename (every 2 cols), row 2 = X/Y headers, rows 3+ = data
-    const cols = files.length * 2;
-    if (cols === 0) return [];
-    const rows: (string | number | null)[][] = [];
-    // header 1: filename
-    const h1: (string | number | null)[] = [];
-    files.forEach((f) => {
-      h1.push(f.name, "");
+  const updateThickness = (fileIdx: number, tIdx: 0 | 1 | 2, value: string) => {
+    setFiles((prev) =>
+      prev.map((f, i) => {
+        if (i !== fileIdx) return f;
+        const t = [...f.thickness] as [string, string, string];
+        t[tIdx] = value;
+        return { ...f, thickness: t };
+      }),
+    );
+  };
+
+  // Total columns needed: max(nameCol, cpCol) + 1 across all files
+  const totalCols = useMemo(() => {
+    if (files.length === 0) return 0;
+    let max = 0;
+    files.forEach((_, i) => {
+      max = Math.max(max, nameCol(i), cpCol(i));
     });
-    rows.push(h1);
-    // header 2: X data / Y data
-    const h2: (string | number | null)[] = [];
-    files.forEach(() => h2.push("X data", "Y data"));
-    rows.push(h2);
-    for (let r = 0; r < RANGE_ROWS; r++) {
-      const row: (string | number | null)[] = [];
-      files.forEach((f) => {
-        row.push(f.xData[r], f.yData[r]);
-      });
-      rows.push(row);
-    }
-    return rows;
+    return max + 1;
   }, [files]);
+
+  // Build the merged AOA (105 rows tall)
+  const mergedAoa = useMemo(() => {
+    if (files.length === 0) return [] as (string | number | null)[][];
+    const aoa: (string | number | null)[][] = [];
+    for (let r = 0; r < 105; r++) aoa.push(new Array(totalCols).fill(null));
+
+    files.forEach((f, i) => {
+      // Row 1: filename
+      aoa[0][nameCol(i)] = f.name;
+      // Row 2: average thickness (in cpCol)
+      const avg = avgOf(f.thickness);
+      aoa[1][cpCol(i)] = avg;
+      // Row 3: formula value = Cp(row80) * avg * 1e12 * 8.854 / 78.5
+      const cp80 = f.cp[75]; // Excel row 80 = data index 75
+      if (avg !== null && typeof cp80 === "number") {
+        aoa[2][cpCol(i)] = (cp80 * avg * 1e12 * 8.854) / 78.5;
+      }
+      // Frequency only from first file (column A, rows 5-105)
+      if (i === 0) {
+        for (let r = 0; r < RANGE_ROWS; r++) {
+          aoa[4 + r][0] = f.freq[r];
+        }
+      }
+      // Cp data (rows 5-105) in cpCol
+      for (let r = 0; r < RANGE_ROWS; r++) {
+        aoa[4 + r][cpCol(i)] = f.cp[r];
+      }
+    });
+
+    return aoa;
+  }, [files, totalCols]);
 
   const handleExport = () => {
     if (files.length === 0) {
       toast.error("파일을 먼저 업로드해주세요");
       return;
     }
-    // Build sheet matching spec: A1 filename, A5:A105 X, B5:B105 Y, with "X data"/"Y data" labels above
-    const totalCols = files.length * 2;
-    const aoa: (string | number | null)[][] = [];
-    // Initialize 105 rows
-    for (let r = 0; r < 105; r++) aoa.push(new Array(totalCols).fill(null));
 
-    files.forEach((f, idx) => {
-      const xCol = idx * 2;
-      const yCol = idx * 2 + 1;
-      aoa[0][xCol] = f.name; // row 1
-      aoa[3][xCol] = "X data"; // row 4 (header above row 5)
-      aoa[3][yCol] = "Y data";
-      for (let r = 0; r < RANGE_ROWS; r++) {
-        aoa[4 + r][xCol] = f.xData[r]; // row 5 onward
-        aoa[4 + r][yCol] = f.yData[r];
-      }
+    // Merged sheet
+    const ws = XLSX.utils.aoa_to_sheet(mergedAoa);
+
+    // Thickness raw sheet
+    const tAoa: (string | number | null)[][] = [];
+    for (let r = 0; r < 5; r++) tAoa.push(new Array(totalCols).fill(null));
+    tAoa[0][0] = "파일명";
+    tAoa[1][0] = "두께1";
+    tAoa[2][0] = "두께2";
+    tAoa[3][0] = "두께3";
+    tAoa[4][0] = "평균";
+    files.forEach((f, i) => {
+      const c = cpCol(i);
+      tAoa[0][c] = f.name;
+      [0, 1, 2].forEach((k) => {
+        const v = parseFloat(f.thickness[k]);
+        tAoa[1 + k][c] = isNaN(v) ? f.thickness[k] || null : v;
+      });
+      const avg = avgOf(f.thickness);
+      tAoa[4][c] = avg;
     });
+    const tWs = XLSX.utils.aoa_to_sheet(tAoa);
 
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Merged");
+    XLSX.utils.book_append_sheet(wb, tWs, "두께 Raw");
     const filename = (outputName.trim() || "merged_data") + ".xlsx";
     XLSX.writeFile(wb, filename);
     toast.success(`${filename} 저장 완료`);
   };
+
+  // For preview, derive header row meta
+  const excelRowLabel = (previewIdx: number) => {
+    // previewIdx 0 → Excel row 1
+    // previewIdx 1 → Excel row 2
+    // previewIdx 2 → Excel row 3
+    // previewIdx 3 → Excel row 5 (skip row 4)
+    if (previewIdx <= 2) return previewIdx + 1;
+    return previewIdx + 2;
+  };
+
+  // Build preview: rows 1,2,3 then data rows starting Excel row 5
+  const previewRows = useMemo(() => {
+    if (mergedAoa.length === 0) return [];
+    const rows: (string | number | null)[][] = [];
+    rows.push(mergedAoa[0]); // row 1 filenames
+    rows.push(mergedAoa[1]); // row 2 averages
+    rows.push(mergedAoa[2]); // row 3 formula
+    // skip row 4 (empty / removed X data Y data)
+    for (let r = 4; r < mergedAoa.length; r++) rows.push(mergedAoa[r]);
+    return rows;
+  }, [mergedAoa]);
 
   return (
     <div className="min-h-screen" style={{ background: "var(--gradient-subtle)" }}>
@@ -172,26 +240,40 @@ const Index = () => {
               </Button>
             </div>
             <ul className="space-y-2">
-              {files.map((f, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between rounded-lg bg-secondary px-4 py-2.5"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FileSpreadsheet className="h-4 w-4 text-primary shrink-0" />
-                    <span className="text-sm font-medium truncate">{f.name}</span>
-                    <span className="text-xs text-muted-foreground shrink-0">
-                      열 {String.fromCharCode(65 + i * 2)} / {String.fromCharCode(65 + i * 2 + 1)}
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => removeFile(i)}
-                    className="text-muted-foreground hover:text-destructive transition-colors"
+              {files.map((f, i) => {
+                const avg = avgOf(f.thickness);
+                return (
+                  <li
+                    key={i}
+                    className="flex flex-wrap items-center gap-3 rounded-lg bg-secondary px-4 py-2.5"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                </li>
-              ))}
+                    <FileSpreadsheet className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-sm font-medium truncate max-w-[260px]">{f.name}</span>
+                    <div className="flex items-center gap-2">
+                      {[0, 1, 2].map((k) => (
+                        <Input
+                          key={k}
+                          type="number"
+                          step="any"
+                          placeholder={`두께${k + 1}`}
+                          value={f.thickness[k]}
+                          onChange={(e) => updateThickness(i, k as 0 | 1 | 2, e.target.value)}
+                          className="h-8 w-24 bg-background"
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      평균: {avg !== null ? avg.toFixed(4) : "—"}
+                    </span>
+                    <button
+                      onClick={() => removeFile(i)}
+                      className="ml-auto text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </Card>
         )}
@@ -203,9 +285,9 @@ const Index = () => {
               <table className="text-xs">
                 <tbody>
                   {previewRows.slice(0, 50).map((row, ri) => (
-                    <tr key={ri} className={ri < 2 ? "bg-accent font-semibold" : "even:bg-muted/40"}>
+                    <tr key={ri} className={ri < 3 ? "bg-accent font-semibold" : "even:bg-muted/40"}>
                       <td className="px-2 py-1 text-muted-foreground border-r font-mono w-12 text-center">
-                        {ri === 0 ? 1 : ri === 1 ? 4 : ri + 3}
+                        {excelRowLabel(ri)}
                       </td>
                       {row.map((cell, ci) => (
                         <td
@@ -213,7 +295,11 @@ const Index = () => {
                           className="px-3 py-1 border-r whitespace-nowrap"
                           style={{ minWidth: 100 }}
                         >
-                          {cell ?? ""}
+                          {typeof cell === "number"
+                            ? Number.isInteger(cell)
+                              ? cell
+                              : cell.toPrecision(6)
+                            : cell ?? ""}
                         </td>
                       ))}
                     </tr>
