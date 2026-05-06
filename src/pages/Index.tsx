@@ -97,6 +97,11 @@ const Index = () => {
     if (files.length === 0) return [] as (string | number | null)[][];
     const aoa: (string | number | null)[][] = [];
     for (let r = 0; r < 105; r++) aoa.push(new Array(totalCols).fill(null));
+    // Column A labels
+    aoa[0][0] = "파일명";
+    aoa[1][0] = "두께";
+    aoa[2][0] = "1.07.E+5";
+    aoa[3][0] = "유전율";
 
     files.forEach((f, i) => {
       // Row 1: filename
