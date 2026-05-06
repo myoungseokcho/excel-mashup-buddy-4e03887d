@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from "react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,12 +19,12 @@ const RANGE_ROWS = 101; // A5:B105 → 101 rows
 // Column index for a file's Cp / filename / average / formula cell.
 // file 0 → col 1 (B); file i>=1 → col i+1
 const cpCol = (i: number) => (i === 0 ? 1 : i + 1);
-const nameCol = (i: number) => (i === 0 ? 0 : i + 1);
+const nameCol = (i: number) => (i === 0 ? 1 : i + 1);
 
 const avgOf = (t: [string, string, string]) => {
   const nums = t.map((v) => parseFloat(v)).filter((n) => !isNaN(n));
   if (nums.length === 0) return null;
-  return nums.reduce((a, b) => a + b, 0) / nums.length;
+  return nums.reduce((a, b) => a + b, 0) / nums.length - 0.3;
 };
 
 const Index = () => {
@@ -132,6 +132,16 @@ const Index = () => {
 
     // Merged sheet
     const ws = XLSX.utils.aoa_to_sheet(mergedAoa);
+    // Apply yellow fill to entire row 3
+    for (let c = 0; c < totalCols; c++) {
+      const addr = XLSX.utils.encode_cell({ c, r: 2 });
+      if (!ws[addr]) ws[addr] = { t: "z", v: null };
+      ws[addr].s = {
+        ...(ws[addr].s || {}),
+        fill: { patternType: "solid", fgColor: { rgb: "FFFF00" } },
+      };
+    }
+    if (!ws["!ref"]) ws["!ref"] = XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: totalCols - 1, r: mergedAoa.length - 1 } });
 
     // Thickness raw sheet
     const tAoa: (string | number | null)[][] = [];
