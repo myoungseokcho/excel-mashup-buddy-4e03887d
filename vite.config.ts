@@ -6,7 +6,7 @@ import { componentTagger } from "lovable-tagger";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
   // GitHub Pages 배포를 위한 경로 설정 (반드시 저장소 이름을 적어주세요)
-  base: "/excel-mashup-buddy-91b3ac7d/", 
+  base: "/excel-mashup-buddy-4e03887d/", 
   
   server: {
     host: "::",
